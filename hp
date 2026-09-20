@@ -1,0 +1,472 @@
+--========================================================
+-- CLIENT HEALTH SYSTEM
+-- Player + NPC
+--========================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+--========================================================
+-- CONFIG
+--========================================================
+
+local MAX_DISTANCE = 80
+local DISTANCE_UPDATE = 0.15
+
+--========================================================
+-- CONTAINER
+--========================================================
+
+local playerGuis = {}
+local npcGuis = {}
+
+--========================================================
+-- LOCAL PLAYER HEALTH GUI
+--========================================================
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "LocalHealthGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local healthFrame = Instance.new("Frame")
+healthFrame.Name = "HealthFrame"
+healthFrame.Size = UDim2.fromOffset(180, 55)
+healthFrame.Position = UDim2.new(0.5, -90, 1, -100)
+healthFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+healthFrame.BackgroundTransparency = 0.15
+healthFrame.BorderSizePixel = 0
+healthFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = healthFrame
+
+local healthText = Instance.new("TextLabel")
+healthText.Name = "HealthPercent"
+healthText.Size = UDim2.fromScale(1, 1)
+healthText.BackgroundTransparency = 1
+healthText.Font = Enum.Font.GothamBold
+healthText.TextSize = 24
+healthText.TextColor3 = Color3.fromRGB(255, 255, 255)
+healthText.TextStrokeTransparency = 0.5
+healthText.Text = "100%"
+healthText.Parent = healthFrame
+
+--========================================================
+-- UPDATE LOCAL PLAYER HP
+--========================================================
+
+local function setupLocalCharacter(character)
+
+	local humanoid = character:WaitForChild("Humanoid")
+
+	local function updateHealth(health)
+
+		if humanoid.MaxHealth <= 0 then
+			return
+		end
+
+		local percent = math.clamp(
+			(health / humanoid.MaxHealth) * 100,
+			0,
+			100
+		)
+
+		healthText.Text = string.format(
+			"HP  %d%%",
+			math.floor(percent + 0.5)
+		)
+	end
+
+	updateHealth(humanoid.Health)
+
+	humanoid.HealthChanged:Connect(updateHealth)
+end
+
+if LocalPlayer.Character then
+	setupLocalCharacter(LocalPlayer.Character)
+end
+
+LocalPlayer.CharacterAdded:Connect(setupLocalCharacter)
+
+--========================================================
+-- CREATE PLAYER GUI
+--========================================================
+
+local function createPlayerGui(player, character)
+
+	if player == LocalPlayer then
+		return
+	end
+
+	if playerGuis[player] then
+		return
+	end
+
+	local head = character:FindFirstChild("Head")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+	if not head or not humanoid then
+		return
+	end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "PlayerHealth"
+	billboard.Adornee = head
+	billboard.Size = UDim2.fromOffset(90, 30)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.AlwaysOnTop = true
+	billboard.MaxDistance = MAX_DISTANCE
+	billboard.Enabled = false
+	billboard.Parent = head
+
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.fromScale(1, 1)
+	text.BackgroundTransparency = 1
+	text.Font = Enum.Font.GothamBold
+	text.TextSize = 15
+
+	-- PLAYER = putih
+	text.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+	text.TextStrokeTransparency = 0
+	text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+
+	text.Text = "100%"
+	text.Parent = billboard
+
+	playerGuis[player] = {
+		gui = billboard,
+		text = text,
+		character = character,
+		humanoid = humanoid
+	}
+
+	humanoid.HealthChanged:Connect(function(health)
+
+		if not playerGuis[player] then
+			return
+		end
+
+		local percent = math.clamp(
+			(health / humanoid.MaxHealth) * 100,
+			0,
+			100
+		)
+
+		playerGuis[player].text.Text =
+			string.format("%d%%", math.floor(percent + 0.5))
+	end)
+end
+
+--========================================================
+-- REMOVE PLAYER GUI
+--========================================================
+
+local function removePlayerGui(player)
+
+	local data = playerGuis[player]
+
+	if data then
+
+		if data.gui then
+			data.gui:Destroy()
+		end
+
+		playerGuis[player] = nil
+	end
+end
+
+--========================================================
+-- SETUP PLAYER
+--========================================================
+
+local function setupPlayer(player)
+
+	if player == LocalPlayer then
+		return
+	end
+
+	player.CharacterAdded:Connect(function(character)
+
+		removePlayerGui(player)
+
+		character:WaitForChild("Head", 5)
+		character:WaitForChild("Humanoid", 5)
+
+		task.wait(0.2)
+
+		createPlayerGui(player, character)
+	end)
+
+	player.CharacterRemoving:Connect(function()
+		removePlayerGui(player)
+	end)
+
+	if player.Character then
+
+		task.spawn(function()
+
+			player.Character:WaitForChild("Head", 5)
+			player.Character:WaitForChild("Humanoid", 5)
+
+			createPlayerGui(
+				player,
+				player.Character
+			)
+		end)
+	end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	setupPlayer(player)
+end
+
+Players.PlayerAdded:Connect(setupPlayer)
+
+Players.PlayerRemoving:Connect(function(player)
+	removePlayerGui(player)
+end)
+
+--========================================================
+-- NPC GUI
+--========================================================
+
+local function isPlayerCharacter(model)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+
+		if player.Character == model then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function createNPCGui(npc)
+
+	if npcGuis[npc] then
+		return
+	end
+
+	if isPlayerCharacter(npc) then
+		return
+	end
+
+	local humanoid = npc:FindFirstChildOfClass("Humanoid")
+	local head = npc:FindFirstChild("Head")
+
+	if not humanoid or not head then
+		return
+	end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "NPCHealth"
+	billboard.Adornee = head
+	billboard.Size = UDim2.fromOffset(110, 35)
+	billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+	billboard.AlwaysOnTop = true
+	billboard.MaxDistance = MAX_DISTANCE
+	billboard.Enabled = false
+	billboard.Parent = head
+
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.fromScale(1, 1)
+	text.BackgroundTransparency = 1
+
+	text.Font = Enum.Font.GothamBold
+	text.TextSize = 14
+
+	-- NPC = kuning
+	text.TextColor3 = Color3.fromRGB(255, 220, 80)
+
+	text.TextStrokeTransparency = 0
+	text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+
+	text.Text = "NPC 100%"
+	text.Parent = billboard
+
+	npcGuis[npc] = {
+		gui = billboard,
+		text = text,
+		humanoid = humanoid
+	}
+
+	humanoid.HealthChanged:Connect(function(health)
+
+		local data = npcGuis[npc]
+
+		if not data then
+			return
+		end
+
+		if humanoid.MaxHealth <= 0 then
+			return
+		end
+
+		local percent = math.clamp(
+			(health / humanoid.MaxHealth) * 100,
+			0,
+			100
+		)
+
+		data.text.Text =
+			string.format(
+				"NPC %d%%",
+				math.floor(percent + 0.5)
+			)
+	end)
+
+	humanoid.Died:Connect(function()
+
+		local data = npcGuis[npc]
+
+		if data then
+			data.gui.Enabled = false
+		end
+	end)
+end
+
+--========================================================
+-- REMOVE NPC GUI
+--========================================================
+
+local function removeNPCGui(npc)
+
+	local data = npcGuis[npc]
+
+	if data then
+
+		if data.gui then
+			data.gui:Destroy()
+		end
+
+		npcGuis[npc] = nil
+	end
+end
+
+--========================================================
+-- DETECT NPC
+--========================================================
+
+local function checkModel(model)
+
+	if not model:IsA("Model") then
+		return
+	end
+
+	if isPlayerCharacter(model) then
+		return
+	end
+
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+
+	if humanoid then
+		createNPCGui(model)
+	end
+end
+
+for _, object in ipairs(workspace:GetDescendants()) do
+	checkModel(object)
+end
+
+workspace.DescendantAdded:Connect(function(object)
+
+	if object:IsA("Model") then
+		task.defer(function()
+			checkModel(object)
+		end)
+	end
+end)
+
+workspace.DescendantRemoving:Connect(function(object)
+
+	if npcGuis[object] then
+		removeNPCGui(object)
+	end
+end)
+
+--========================================================
+-- DISTANCE OPTIMIZATION
+--========================================================
+
+local lastUpdate = 0
+
+RunService.Heartbeat:Connect(function()
+
+	if tick() - lastUpdate < DISTANCE_UPDATE then
+		return
+	end
+
+	lastUpdate = tick()
+
+	local character = LocalPlayer.Character
+
+	if not character then
+		return
+	end
+
+	local root = character:FindFirstChild("HumanoidRootPart")
+
+	if not root then
+		return
+	end
+
+	local myPosition = root.Position
+
+	-- PLAYER LAIN
+	for player, data in pairs(playerGuis) do
+
+		if data.character
+			and data.character.Parent then
+
+			local targetRoot =
+				data.character:FindFirstChild("HumanoidRootPart")
+
+			if targetRoot then
+
+				local distance =
+					(targetRoot.Position - myPosition).Magnitude
+
+				data.gui.Enabled =
+					distance <= MAX_DISTANCE
+			else
+				data.gui.Enabled = false
+			end
+
+		else
+			removePlayerGui(player)
+		end
+	end
+
+	-- NPC
+	for npc, data in pairs(npcGuis) do
+
+		if npc
+			and npc.Parent
+			and data.gui
+			and data.gui.Parent then
+
+			local targetRoot =
+				npc:FindFirstChild("HumanoidRootPart")
+
+			if targetRoot then
+
+				local distance =
+					(targetRoot.Position - myPosition).Magnitude
+
+				data.gui.Enabled =
+					distance <= MAX_DISTANCE
+			else
+				data.gui.Enabled = false
+			end
+
+		else
+			removeNPCGui(npc)
+		end
+	end
+end)
