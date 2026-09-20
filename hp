@@ -1,21 +1,40 @@
 --========================================================
--- BEAUTIFUL LOCAL PLAYER HEALTH HUD
+-- ROBLOX LOCAL PLAYER HUD (WORKS AS LocalScript)
 --========================================================
 
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local LocalizationService = game:GetService("LocalizationService")
 local Lighting = game:GetService("Lighting")
-local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-if PlayerGui and PlayerGui:FindFirstChild("LocalHealthDisplay") then
+if PlayerGui:FindFirstChild("LocalHealthDisplay") then
 	return
 end
 
 local localHealthConnection
 local maxHealthConnection
+
+--========================================================
+-- SAFE LIGHTWEIGHT RENDER SETTINGS
+--========================================================
+
+local function applyLowCostVisualSettings()
+	Lighting.Brightness = 1.2
+	Lighting.OutdoorAmbient = Color3.fromRGB(120, 120, 120)
+	Lighting.GlobalShadows = false
+	Lighting.ShadowSoftness = 0
+	Lighting.FogEnd = 900
+end
+
+task.defer(applyLowCostVisualSettings)
+
+--========================================================
+-- SCREEN GUI
+--========================================================
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "LocalHealthDisplay"
@@ -32,7 +51,6 @@ main.Name = "HealthHUD"
 main.AnchorPoint = Vector2.new(0, 1)
 main.Position = UDim2.new(0, 25, 1, -25)
 main.Size = UDim2.fromOffset(260, 72)
-
 main.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
 main.BackgroundTransparency = 0.08
 main.BorderSizePixel = 0
@@ -54,19 +72,14 @@ mainStroke.Parent = main
 
 local hpLabel = Instance.new("TextLabel")
 hpLabel.Name = "HPLabel"
-
 hpLabel.Position = UDim2.new(0, 14, 0, 8)
 hpLabel.Size = UDim2.fromOffset(45, 20)
-
 hpLabel.BackgroundTransparency = 1
-
 hpLabel.Font = Enum.Font.GothamBold
 hpLabel.Text = "HP"
 hpLabel.TextSize = 13
-
 hpLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
 hpLabel.TextXAlignment = Enum.TextXAlignment.Left
-
 hpLabel.Parent = main
 
 --========================================================
@@ -75,20 +88,14 @@ hpLabel.Parent = main
 
 local percentText = Instance.new("TextLabel")
 percentText.Name = "Percent"
-
 percentText.Position = UDim2.new(0, 57, 0, 3)
 percentText.Size = UDim2.fromOffset(80, 30)
-
 percentText.BackgroundTransparency = 1
-
 percentText.Font = Enum.Font.GothamBold
 percentText.Text = "100%"
 percentText.TextSize = 23
-
 percentText.TextColor3 = Color3.fromRGB(255, 255, 255)
-
 percentText.TextXAlignment = Enum.TextXAlignment.Left
-
 percentText.Parent = main
 
 --========================================================
@@ -97,20 +104,14 @@ percentText.Parent = main
 
 local actualText = Instance.new("TextLabel")
 actualText.Name = "ActualHealth"
-
 actualText.Position = UDim2.new(1, -95, 0, 8)
 actualText.Size = UDim2.fromOffset(80, 20)
-
 actualText.BackgroundTransparency = 1
-
 actualText.Font = Enum.Font.GothamMedium
 actualText.Text = "100 / 100"
 actualText.TextSize = 12
-
 actualText.TextColor3 = Color3.fromRGB(170, 170, 170)
-
 actualText.TextXAlignment = Enum.TextXAlignment.Right
-
 actualText.Parent = main
 
 --========================================================
@@ -119,13 +120,10 @@ actualText.Parent = main
 
 local barBackground = Instance.new("Frame")
 barBackground.Name = "BarBackground"
-
 barBackground.Position = UDim2.new(0, 14, 1, -23)
 barBackground.Size = UDim2.new(1, -28, 0, 10)
-
 barBackground.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
 barBackground.BorderSizePixel = 0
-
 barBackground.Parent = main
 
 local barCorner = Instance.new("UICorner")
@@ -138,12 +136,9 @@ barCorner.Parent = barBackground
 
 local healthBar = Instance.new("Frame")
 healthBar.Name = "HealthBar"
-
 healthBar.Size = UDim2.fromScale(1, 1)
-
 healthBar.BackgroundColor3 = Color3.fromRGB(70, 220, 100)
 healthBar.BorderSizePixel = 0
-
 healthBar.Parent = barBackground
 
 local healthBarCorner = Instance.new("UICorner")
@@ -151,18 +146,15 @@ healthBarCorner.CornerRadius = UDim.new(1, 0)
 healthBarCorner.Parent = healthBar
 
 --========================================================
--- SHINE
+-- SHINE EFFECT
 --========================================================
 
 local shine = Instance.new("Frame")
 shine.Name = "Shine"
-
 shine.Size = UDim2.new(1, 0, 0, 2)
 shine.Position = UDim2.new(0, 0, 0, 1)
-
 shine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 shine.BackgroundTransparency = 0.65
-
 shine.BorderSizePixel = 0
 shine.Parent = healthBar
 
@@ -175,7 +167,6 @@ shineCorner.Parent = shine
 --========================================================
 
 local function setupLocalCharacter(character)
-
 	if localHealthConnection then
 		localHealthConnection:Disconnect()
 		localHealthConnection = nil
@@ -187,182 +178,77 @@ local function setupLocalCharacter(character)
 	end
 
 	local humanoid = character:WaitForChild("Humanoid", 10)
-
 	if not humanoid then
 		return
 	end
 
 	local function updateHealth()
-
 		local maxHealth = humanoid.MaxHealth
-
 		if maxHealth <= 0 then
 			return
 		end
 
-		local health = math.clamp(
-			humanoid.Health,
-			0,
-			maxHealth
-		)
+		local health = math.clamp(humanoid.Health, 0, maxHealth)
+		local percent = math.clamp(health / maxHealth, 0, 1)
+		local percentNumber = math.floor(percent * 100 + 0.5)
 
-		local percent = math.clamp(
-			health / maxHealth,
-			0,
-			1
-		)
-
-		local percentNumber = math.floor(
-			percent * 100 + 0.5
-		)
-
-		--============================================
-		-- TEXT
-		--============================================
-
-		percentText.Text =
-			string.format("%d%%", percentNumber)
-
-		actualText.Text =
-			string.format(
-				"%d / %d",
-				math.floor(health + 0.5),
-				math.floor(maxHealth + 0.5)
-			)
-
-		--============================================
-		-- BAR
-		--============================================
+		percentText.Text = string.format("%d%%", percentNumber)
+		actualText.Text = string.format("%d / %d", math.floor(health + 0.5), math.floor(maxHealth + 0.5))
 
 		local tween = TweenService:Create(
 			healthBar,
-			TweenInfo.new(
-				0.18,
-				Enum.EasingStyle.Quad,
-				Enum.EasingDirection.Out
-			),
-			{
-				Size = UDim2.new(
-					percent,
-					0,
-					1,
-					0
-				)
-			}
+			TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{ Size = UDim2.new(percent, 0, 1, 0) }
 		)
-
 		tween:Play()
 
-		--============================================
-		-- COLOR
-		--============================================
-
 		local targetColor
-
 		if percent > 0.6 then
-
-			targetColor =
-				Color3.fromRGB(70, 220, 100)
-
+			targetColor = Color3.fromRGB(70, 220, 100)
 		elseif percent > 0.3 then
-
-			targetColor =
-				Color3.fromRGB(245, 190, 60)
-
+			targetColor = Color3.fromRGB(245, 190, 60)
 		else
-
-			targetColor =
-				Color3.fromRGB(235, 65, 65)
-
+			targetColor = Color3.fromRGB(235, 65, 65)
 		end
 
 		local colorTween = TweenService:Create(
 			healthBar,
 			TweenInfo.new(0.2),
-			{
-				BackgroundColor3 = targetColor
-			}
+			{ BackgroundColor3 = targetColor }
 		)
-
 		colorTween:Play()
 
-		--============================================
-		-- LOW HP WARNING
-		--============================================
-
 		if percent <= 0.25 and percent > 0 then
-
-			percentText.TextColor3 =
-				Color3.fromRGB(255, 90, 90)
-
+			percentText.TextColor3 = Color3.fromRGB(255, 90, 90)
 		else
-
-			percentText.TextColor3 =
-				Color3.fromRGB(255, 255, 255)
-
+			percentText.TextColor3 = Color3.fromRGB(255, 255, 255)
 		end
 	end
 
 	updateHealth()
-
-	localHealthConnection =
-		humanoid.HealthChanged:Connect(updateHealth)
-
-	maxHealthConnection =
-		humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(
-			updateHealth
-		)
+	localHealthConnection = humanoid.HealthChanged:Connect(updateHealth)
+	maxHealthConnection = humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateHealth)
 end
 
 --========================================================
--- CHARACTER
+-- CHARACTER LISTENER
 --========================================================
 
 if LocalPlayer.Character then
-
 	task.spawn(function()
-		setupLocalCharacter(
-			LocalPlayer.Character
-		)
+		setupLocalCharacter(LocalPlayer.Character)
 	end)
-
 end
 
 LocalPlayer.CharacterAdded:Connect(function(character)
-
 	task.spawn(function()
 		setupLocalCharacter(character)
 	end)
-
-end
-
---========================================================
--- LIGHTWEIGHT PERFORMANCE OPTIMIZATION
---========================================================
-
-local function optimizePerformance()
-	Workspace.StreamingEnabled = true
-	Lighting.GlobalShadows = false
-	Lighting.ShadowSoftness = 0
-	Lighting.Brightness = 1.2
-	Lighting.OutdoorAmbient = Color3.fromRGB(120, 120, 120)
-	Lighting.FogEnd = 800
-	Lighting.QualityLevel = 1
-
-	if Workspace.Terrain then
-		Workspace.Terrain.WaterWaveSize = 0
-		Workspace.Terrain.WaterWaveSpeed = 0
-	end
-end
-
-task.defer(optimizePerformance)
+end)
 
 --========================================================
 -- SAFE DEVICE + LOCALE INFO
 --========================================================
-
-local UserInputService = game:GetService("UserInputService")
-local LocalizationService = game:GetService("LocalizationService")
 
 local function getDeviceName()
 	if UserInputService.GamepadEnabled then
@@ -382,7 +268,7 @@ local function getLocaleName()
 	return "Unknown"
 end
 
-if PlayerGui and not PlayerGui:FindFirstChild("DeviceInfoPanel") then
+if not PlayerGui:FindFirstChild("DeviceInfoPanel") then
 	local infoGui = Instance.new("ScreenGui")
 	infoGui.Name = "DeviceInfoPanel"
 	infoGui.ResetOnSpawn = false
