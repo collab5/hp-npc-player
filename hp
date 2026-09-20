@@ -1,5 +1,5 @@
 --========================================================
--- ROBLOX LOCAL PLAYER HUD (WORKS AS LocalScript)
+-- ROBLOX LOCAL PLAYER HUD + ENEMY/NPC HP BAR
 --========================================================
 
 local TweenService = game:GetService("TweenService")
@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local LocalizationService = game:GetService("LocalizationService")
 local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -17,6 +18,7 @@ end
 
 local localHealthConnection
 local maxHealthConnection
+local trackedHumanoids = {}
 
 --========================================================
 -- SAFE LIGHTWEIGHT RENDER SETTINGS
@@ -33,7 +35,7 @@ end
 task.defer(applyLowCostVisualSettings)
 
 --========================================================
--- SCREEN GUI
+-- SCREEN GUI FOR LOCAL PLAYER
 --========================================================
 
 local screenGui = Instance.new("ScreenGui")
@@ -41,10 +43,6 @@ screenGui.Name = "LocalHealthDisplay"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = false
 screenGui.Parent = PlayerGui
-
---========================================================
--- MAIN FRAME
---========================================================
 
 local main = Instance.new("Frame")
 main.Name = "HealthHUD"
@@ -66,10 +64,6 @@ mainStroke.Transparency = 0.85
 mainStroke.Thickness = 1
 mainStroke.Parent = main
 
---========================================================
--- HP LABEL
---========================================================
-
 local hpLabel = Instance.new("TextLabel")
 hpLabel.Name = "HPLabel"
 hpLabel.Position = UDim2.new(0, 14, 0, 8)
@@ -81,10 +75,6 @@ hpLabel.TextSize = 13
 hpLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
 hpLabel.TextXAlignment = Enum.TextXAlignment.Left
 hpLabel.Parent = main
-
---========================================================
--- PERCENT TEXT
---========================================================
 
 local percentText = Instance.new("TextLabel")
 percentText.Name = "Percent"
@@ -98,10 +88,6 @@ percentText.TextColor3 = Color3.fromRGB(255, 255, 255)
 percentText.TextXAlignment = Enum.TextXAlignment.Left
 percentText.Parent = main
 
---========================================================
--- ACTUAL HP
---========================================================
-
 local actualText = Instance.new("TextLabel")
 actualText.Name = "ActualHealth"
 actualText.Position = UDim2.new(1, -95, 0, 8)
@@ -113,10 +99,6 @@ actualText.TextSize = 12
 actualText.TextColor3 = Color3.fromRGB(170, 170, 170)
 actualText.TextXAlignment = Enum.TextXAlignment.Right
 actualText.Parent = main
-
---========================================================
--- BAR BACKGROUND
---========================================================
 
 local barBackground = Instance.new("Frame")
 barBackground.Name = "BarBackground"
@@ -130,10 +112,6 @@ local barCorner = Instance.new("UICorner")
 barCorner.CornerRadius = UDim.new(1, 0)
 barCorner.Parent = barBackground
 
---========================================================
--- HEALTH BAR
---========================================================
-
 local healthBar = Instance.new("Frame")
 healthBar.Name = "HealthBar"
 healthBar.Size = UDim2.fromScale(1, 1)
@@ -146,24 +124,7 @@ healthBarCorner.CornerRadius = UDim.new(1, 0)
 healthBarCorner.Parent = healthBar
 
 --========================================================
--- SHINE EFFECT
---========================================================
-
-local shine = Instance.new("Frame")
-shine.Name = "Shine"
-shine.Size = UDim2.new(1, 0, 0, 2)
-shine.Position = UDim2.new(0, 0, 0, 1)
-shine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-shine.BackgroundTransparency = 0.65
-shine.BorderSizePixel = 0
-shine.Parent = healthBar
-
-local shineCorner = Instance.new("UICorner")
-shineCorner.CornerRadius = UDim.new(1, 0)
-shineCorner.Parent = shine
-
---========================================================
--- UPDATE HEALTH
+-- UPDATE LOCAL PLAYER HEALTH
 --========================================================
 
 local function setupLocalCharacter(character)
@@ -230,10 +191,6 @@ local function setupLocalCharacter(character)
 	maxHealthConnection = humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateHealth)
 end
 
---========================================================
--- CHARACTER LISTENER
---========================================================
-
 if LocalPlayer.Character then
 	task.spawn(function()
 		setupLocalCharacter(LocalPlayer.Character)
@@ -244,6 +201,150 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 	task.spawn(function()
 		setupLocalCharacter(character)
 	end)
+end)
+
+--========================================================
+-- OTHER PLAYER / NPC HP BAR
+--========================================================
+
+local function getTargetColor(percent)
+	if percent > 0.6 then
+		return Color3.fromRGB(70, 220, 100)
+	elseif percent > 0.3 then
+		return Color3.fromRGB(245, 190, 60)
+	end
+	return Color3.fromRGB(235, 65, 65)
+end
+
+local function createEnemyBar(humanoid)
+	if not humanoid or trackedHumanoids[humanoid] then
+		return
+	end
+
+	local model = humanoid.Parent
+	if not model or model == LocalPlayer.Character then
+		return
+	end
+
+	local root = model:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+
+	local billboardGui = Instance.new("BillboardGui")
+	billboardGui.Name = "EnemyHealthBar"
+	billboardGui.Size = UDim2.fromOffset(120, 16)
+	billboardGui.StudsOffset = Vector3.new(0, 3.2, 0)
+	billboardGui.AlwaysOnTop = true
+	billboardGui.MaxDistance = 120
+	billboardGui.Adornee = root
+	billboardGui.Parent = PlayerGui
+
+	local background = Instance.new("Frame")
+	background.Size = UDim2.new(1, 0, 1, 0)
+	background.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
+	background.BorderSizePixel = 0
+	background.Parent = billboardGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 4)
+	corner.Parent = background
+
+	local bar = Instance.new("Frame")
+	bar.AnchorPoint = Vector2.new(0, 0.5)
+	bar.Position = UDim2.new(0, 2, 0.5, 0)
+	bar.Size = UDim2.new(1, -4, 0.7, 0)
+	bar.BackgroundColor3 = Color3.fromRGB(70, 220, 100)
+	bar.BorderSizePixel = 0
+	bar.Parent = background
+
+	local barCorner = Instance.new("UICorner")
+	barCorner.CornerRadius = UDim.new(0, 3)
+	barCorner.Parent = bar
+
+	local label = Instance.new("TextLabel")
+	label.Position = UDim2.new(0, 0, 0, 0)
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 10
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.Text = "100 / 100"
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.Parent = background
+
+	local function updateBar()
+		if not humanoid.Parent then
+			return
+		end
+
+		local maxHealth = humanoid.MaxHealth
+		if maxHealth <= 0 then
+			return
+		end
+
+		local health = math.clamp(humanoid.Health, 0, maxHealth)
+		local percent = math.clamp(health / maxHealth, 0, 1)
+		bar.Size = UDim2.new(percent, -4, 0.7, 0)
+		bar.BackgroundColor3 = getTargetColor(percent)
+		label.Text = string.format("%d / %d", math.floor(health + 0.5), math.floor(maxHealth + 0.5))
+	end
+
+	updateBar()
+
+	local connections = {
+		humanoid.HealthChanged:Connect(updateBar),
+		humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateBar),
+		humanoid.AncestryChanged:Connect(function()
+			if not humanoid.Parent then
+				for _, connection in ipairs(connections) do
+					connection:Disconnect()
+				end
+				trackedHumanoids[humanoid] = nil
+				billboardGui:Destroy()
+			end
+		end)
+	}
+
+	trackedHumanoids[humanoid] = {
+		gui = billboardGui,
+		connections = connections,
+	}
+end
+
+local function scanCharacters()
+	for _, descendant in ipairs(Workspace:GetDescendants()) do
+		if descendant:IsA("Model") then
+			local humanoid = descendant:FindFirstChildOfClass("Humanoid")
+			if humanoid and humanoid.Parent ~= LocalPlayer.Character then
+				createEnemyBar(humanoid)
+			end
+		end
+	end
+end
+
+scanCharacters()
+
+Workspace.DescendantAdded:Connect(function(descendant)
+	if descendant:IsA("Model") then
+		local humanoid = descendant:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Parent ~= LocalPlayer.Character then
+			createEnemyBar(humanoid)
+		end
+	end
+end)
+
+Workspace.DescendantRemoving:Connect(function(descendant)
+	if descendant:IsA("Model") then
+		local humanoid = descendant:FindFirstChildOfClass("Humanoid")
+		if humanoid and trackedHumanoids[humanoid] then
+			for _, connection in ipairs(trackedHumanoids[humanoid].connections) do
+				connection:Disconnect()
+			end
+			trackedHumanoids[humanoid].gui:Destroy()
+			trackedHumanoids[humanoid] = nil
+		end
+	end
 end)
 
 --========================================================
