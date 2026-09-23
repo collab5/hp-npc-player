@@ -16,7 +16,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 -- CONFIG
 --========================================================
 
-local MAX_DISTANCE = 50
+local MAX_DISTANCE = 25
 local DISTANCE_UPDATE = 0.25
 
 local DARK = Color3.fromRGB(12, 12, 15)
