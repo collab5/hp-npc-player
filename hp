@@ -1,144 +1,333 @@
 --========================================================
--- PLAYER LAIN + NPC HP GUI
--- CLIENT SIDE
+-- CLIENT HP SYSTEM
+-- PLAYER + NPC HEALTH DISPLAY
 --========================================================
 
-local MAX_HP_BAR_DISTANCE = 80
-local DISTANCE_CHECK_INTERVAL = 0.2
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local LocalizationService = game:GetService("LocalizationService")
+local Lighting = game:GetService("Lighting")
 
-local trackedHumanoids = {}
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+--========================================================
+-- CONFIG
+--========================================================
+
+local MAX_DISTANCE = 100
+local UPDATE_DISTANCE_INTERVAL = 0.20
+
+--========================================================
+-- CLEAN OLD GUI
+--========================================================
+
+local oldHealthGui = PlayerGui:FindFirstChild("LocalHealthDisplay")
+if oldHealthGui then
+	oldHealthGui:Destroy()
+end
+
+local oldTargetGui = PlayerGui:FindFirstChild("TargetHealthDisplays")
+if oldTargetGui then
+	oldTargetGui:Destroy()
+end
+
+--========================================================
+-- LIGHTWEIGHT SETTINGS
+--========================================================
+
+task.defer(function()
+	Lighting.Brightness = 1.2
+	Lighting.OutdoorAmbient = Color3.fromRGB(120, 120, 120)
+	Lighting.GlobalShadows = false
+	Lighting.ShadowSoftness = 0
+	Lighting.FogEnd = 900
+end)
+
+--========================================================
+-- LOCAL PLAYER HUD
+--========================================================
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "LocalHealthDisplay"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = false
+screenGui.Parent = PlayerGui
+
+local main = Instance.new("Frame")
+main.Name = "HealthHUD"
+main.AnchorPoint = Vector2.new(0, 1)
+main.Position = UDim2.new(0, 25, 1, -25)
+main.Size = UDim2.fromOffset(260, 72)
+main.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+main.BackgroundTransparency = 0.08
+main.BorderSizePixel = 0
+main.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 12)
+mainCorner.Parent = main
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(255, 255, 255)
+mainStroke.Transparency = 0.85
+mainStroke.Thickness = 1
+mainStroke.Parent = main
+
+local hpLabel = Instance.new("TextLabel")
+hpLabel.Name = "HPLabel"
+hpLabel.Position = UDim2.new(0, 14, 0, 8)
+hpLabel.Size = UDim2.fromOffset(45, 20)
+hpLabel.BackgroundTransparency = 1
+hpLabel.Font = Enum.Font.GothamBold
+hpLabel.Text = "HP"
+hpLabel.TextSize = 13
+hpLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
+hpLabel.TextXAlignment = Enum.TextXAlignment.Left
+hpLabel.Parent = main
+
+local percentText = Instance.new("TextLabel")
+percentText.Name = "Percent"
+percentText.Position = UDim2.new(0, 57, 0, 3)
+percentText.Size = UDim2.fromOffset(80, 30)
+percentText.BackgroundTransparency = 1
+percentText.Font = Enum.Font.GothamBold
+percentText.Text = "100%"
+percentText.TextSize = 23
+percentText.TextColor3 = Color3.fromRGB(255, 255, 255)
+percentText.TextXAlignment = Enum.TextXAlignment.Left
+percentText.Parent = main
+
+local actualText = Instance.new("TextLabel")
+actualText.Name = "ActualHealth"
+actualText.Position = UDim2.new(1, -95, 0, 8)
+actualText.Size = UDim2.fromOffset(80, 20)
+actualText.BackgroundTransparency = 1
+actualText.Font = Enum.Font.GothamMedium
+actualText.Text = "100 / 100"
+actualText.TextSize = 12
+actualText.TextColor3 = Color3.fromRGB(170, 170, 170)
+actualText.TextXAlignment = Enum.TextXAlignment.Right
+actualText.Parent = main
+
+local barBackground = Instance.new("Frame")
+barBackground.Name = "BarBackground"
+barBackground.Position = UDim2.new(0, 14, 1, -23)
+barBackground.Size = UDim2.new(1, -28, 0, 10)
+barBackground.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
+barBackground.BorderSizePixel = 0
+barBackground.Parent = main
+
+local bgCorner = Instance.new("UICorner")
+bgCorner.CornerRadius = UDim.new(1, 0)
+bgCorner.Parent = barBackground
+
+local healthBar = Instance.new("Frame")
+healthBar.Name = "HealthBar"
+healthBar.Size = UDim2.fromScale(1, 1)
+healthBar.BackgroundColor3 = Color3.fromRGB(70, 220, 100)
+healthBar.BorderSizePixel = 0
+healthBar.Parent = barBackground
+
+local healthCorner = Instance.new("UICorner")
+healthCorner.CornerRadius = UDim.new(1, 0)
+healthCorner.Parent = healthBar
+
+--========================================================
+-- LOCAL PLAYER HEALTH
+--========================================================
+
+local localHealthConnection
+local localMaxHealthConnection
+
+local function setupLocalCharacter(character)
+
+	if localHealthConnection then
+		localHealthConnection:Disconnect()
+		localHealthConnection = nil
+	end
+
+	if localMaxHealthConnection then
+		localMaxHealthConnection:Disconnect()
+		localMaxHealthConnection = nil
+	end
+
+	local humanoid = character:WaitForChild("Humanoid", 10)
+
+	if not humanoid then
+		return
+	end
+
+	local function updateLocalHealth()
+
+		local maxHealth = humanoid.MaxHealth
+
+		if maxHealth <= 0 then
+			return
+		end
+
+		local health = math.clamp(humanoid.Health, 0, maxHealth)
+		local percent = math.clamp(health / maxHealth, 0, 1)
+
+		percentText.Text = string.format(
+			"%d%%",
+			math.floor(percent * 100 + 0.5)
+		)
+
+		actualText.Text = string.format(
+			"%d / %d",
+			math.floor(health + 0.5),
+			math.floor(maxHealth + 0.5)
+		)
+
+		TweenService:Create(
+			healthBar,
+			TweenInfo.new(0.15),
+			{
+				Size = UDim2.fromScale(percent, 1)
+			}
+		):Play()
+
+		if percent > 0.6 then
+
+			healthBar.BackgroundColor3 =
+				Color3.fromRGB(70, 220, 100)
+
+		elseif percent > 0.3 then
+
+			healthBar.BackgroundColor3 =
+				Color3.fromRGB(245, 190, 60)
+
+		else
+
+			healthBar.BackgroundColor3 =
+				Color3.fromRGB(235, 65, 65)
+
+		end
+	end
+
+	updateLocalHealth()
+
+	localHealthConnection =
+		humanoid.HealthChanged:Connect(updateLocalHealth)
+
+	localMaxHealthConnection =
+		humanoid:GetPropertyChangedSignal("MaxHealth")
+		:Connect(updateLocalHealth)
+end
+
+if LocalPlayer.Character then
+	task.spawn(function()
+		setupLocalCharacter(LocalPlayer.Character)
+	end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+	task.spawn(function()
+		setupLocalCharacter(character)
+	end)
+end)
+
+--========================================================
+-- TARGET GUI CONTAINER
+--========================================================
+
+local targetGuiFolder = Instance.new("Folder")
+targetGuiFolder.Name = "TargetHealthDisplays"
+targetGuiFolder.Parent = PlayerGui
+
+--========================================================
+-- TRACKING
+--========================================================
+
+local tracked = {}
+
+--========================================================
+-- HEALTH COLOR
+--========================================================
 
 local function getHealthColor(percent)
-	if percent > 0.60 then
+
+	if percent > 0.6 then
 		return Color3.fromRGB(70, 220, 100)
-	elseif percent > 0.30 then
+
+	elseif percent > 0.3 then
 		return Color3.fromRGB(245, 190, 60)
+
 	else
 		return Color3.fromRGB(235, 65, 65)
 	end
 end
 
-local function getRoot(character)
-	return character:FindFirstChild("HumanoidRootPart")
-		or character:FindFirstChild("UpperTorso")
-		or character:FindFirstChild("Torso")
-		or character:FindFirstChild("Head")
-end
+--========================================================
+-- CREATE TARGET HP GUI
+--========================================================
 
-local function removeHealthGui(humanoid)
-	local data = trackedHumanoids[humanoid]
-
-	if not data then
-		return
-	end
-
-	trackedHumanoids[humanoid] = nil
-
-	if data.connections then
-		for _, connection in ipairs(data.connections) do
-			if connection then
-				connection:Disconnect()
-			end
-		end
-	end
-
-	if data.gui then
-		data.gui:Destroy()
-	end
-end
-
-local function createPlayerHealthGui(character)
+local function createHealthGui(character, humanoid, root, isPlayer)
 
 	if not character then
 		return
 	end
 
-	-- Jangan tampilkan HP diri sendiri
+	if not humanoid then
+		return
+	end
+
+	if not root then
+		return
+	end
+
+	if humanoid == nil then
+		return
+	end
+
+	if tracked[humanoid] then
+		return
+	end
+
+	-- Jangan tampilkan HP karakter sendiri
 	if character == LocalPlayer.Character then
 		return
 	end
 
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-
-	if not humanoid then
-		humanoid = character:WaitForChild("Humanoid", 5)
-	end
-
-	if not humanoid then
-		return
-	end
-
-	if trackedHumanoids[humanoid] then
-		return
-	end
-
-	local root = getRoot(character)
-
-	if not root then
-		root = character:WaitForChild("HumanoidRootPart", 5)
-	end
-
-	if not root then
-		return
-	end
-
-	--====================================================
-	-- CEK PLAYER ATAU NPC
-	--====================================================
-
-	local player = Players:GetPlayerFromCharacter(character)
-
-	local isPlayer = player ~= nil
-
-	--====================================================
-	-- BILLBOARD
-	--====================================================
-
-	local gui = Instance.new("BillboardGui")
-
-	if isPlayer then
-		gui.Name = "OtherPlayerHealth"
-	else
-		gui.Name = "NPCHealth"
-	end
-
-	gui.Adornee = root
-	gui.Size = UDim2.fromOffset(150, 38)
-	gui.StudsOffset = Vector3.new(0, 3.5, 0)
-	gui.AlwaysOnTop = true
-	gui.MaxDistance = MAX_HP_BAR_DISTANCE
-
-	-- Awalnya mati sampai dicek jarak
-	gui.Enabled = false
-
-	gui.Parent = PlayerGui
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = isPlayer and "PlayerHealth" or "NPCHealth"
+	billboard.Size = UDim2.fromOffset(145, 32)
+	billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+	billboard.AlwaysOnTop = true
+	billboard.LightInfluence = 0
+	billboard.MaxDistance = MAX_DISTANCE
+	billboard.Enabled = false
+	billboard.Adornee = root
+	billboard.Parent = targetGuiFolder
 
 	--====================================================
 	-- BACKGROUND
 	--====================================================
 
 	local background = Instance.new("Frame")
+	background.Name = "Background"
 	background.Size = UDim2.fromScale(1, 1)
 	background.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
-	background.BackgroundTransparency = 0.1
+	background.BackgroundTransparency = 0.15
 	background.BorderSizePixel = 0
-	background.ClipsDescendants = true
-	background.Parent = gui
+	background.Parent = billboard
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = background
+	local bgCorner = Instance.new("UICorner")
+	bgCorner.CornerRadius = UDim.new(0, 6)
+	bgCorner.Parent = background
 
 	local stroke = Instance.new("UIStroke")
-	stroke.Thickness = 1
+	stroke.Thickness = 1.5
+	stroke.Transparency = 0.25
+	stroke.Color =
+		isPlayer
+		and Color3.fromRGB(70, 160, 255)
+		or Color3.fromRGB(255, 190, 60)
 
-	if isPlayer then
-		stroke.Color = Color3.fromRGB(80, 170, 255)
-	else
-		stroke.Color = Color3.fromRGB(255, 190, 60)
-	end
-
-	stroke.Transparency = 0.5
 	stroke.Parent = background
 
 	--====================================================
@@ -147,78 +336,91 @@ local function createPlayerHealthGui(character)
 
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "Name"
-	nameLabel.Position = UDim2.new(0, 7, 0, 2)
-	nameLabel.Size = UDim2.new(1, -14, 0, 13)
 	nameLabel.BackgroundTransparency = 1
+	nameLabel.Position = UDim2.new(0, 5, 0, -17)
+	nameLabel.Size = UDim2.new(1, -10, 0, 18)
 	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextSize = 10
-	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.TextSize = 11
+	nameLabel.TextStrokeTransparency = 0.5
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 	if isPlayer then
-		nameLabel.Text = player.DisplayName
-		nameLabel.TextColor3 = Color3.fromRGB(170, 220, 255)
+		nameLabel.TextColor3 =
+			Color3.fromRGB(100, 190, 255)
+
+		nameLabel.Text = Players:GetPlayerFromCharacter(character).DisplayName
+
 	else
+		nameLabel.TextColor3 =
+			Color3.fromRGB(255, 210, 90)
+
 		nameLabel.Text = character.Name
-		nameLabel.TextColor3 = Color3.fromRGB(255, 215, 120)
 	end
 
 	nameLabel.Parent = background
 
 	--====================================================
-	-- BAR BACKGROUND
+	-- HP BAR BACKGROUND
 	--====================================================
 
 	local barBackground = Instance.new("Frame")
 	barBackground.Name = "BarBackground"
-	barBackground.Position = UDim2.new(0, 7, 0, 17)
-	barBackground.Size = UDim2.new(1, -14, 0, 8)
-	barBackground.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
+	barBackground.Position = UDim2.new(0, 3, 0, 4)
+	barBackground.Size = UDim2.new(1, -6, 0, 13)
+	barBackground.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
 	barBackground.BorderSizePixel = 0
 	barBackground.ClipsDescendants = true
 	barBackground.Parent = background
 
 	local barBgCorner = Instance.new("UICorner")
-	barBgCorner.CornerRadius = UDim.new(1, 0)
+	barBgCorner.CornerRadius = UDim.new(0, 4)
 	barBgCorner.Parent = barBackground
 
 	--====================================================
 	-- HP BAR
 	--====================================================
 
-	local hpBar = Instance.new("Frame")
-	hpBar.Name = "HPBar"
-	hpBar.Size = UDim2.fromScale(1, 1)
-	hpBar.BackgroundColor3 = Color3.fromRGB(70, 220, 100)
-	hpBar.BorderSizePixel = 0
-	hpBar.Parent = barBackground
+	local bar = Instance.new("Frame")
+	bar.Name = "HealthBar"
+	bar.Size = UDim2.fromScale(1, 1)
+	bar.BackgroundColor3 = Color3.fromRGB(70, 220, 100)
+	bar.BorderSizePixel = 0
+	bar.Parent = barBackground
 
-	local hpCorner = Instance.new("UICorner")
-	hpCorner.CornerRadius = UDim.new(1, 0)
-	hpCorner.Parent = hpBar
-
-	--====================================================
-	-- PERCENT
-	--====================================================
-
-	local percentLabel = Instance.new("TextLabel")
-	percentLabel.Name = "Percent"
-	percentLabel.Position = UDim2.new(0, 0, 0, 27)
-	percentLabel.Size = UDim2.new(1, 0, 0, 10)
-	percentLabel.BackgroundTransparency = 1
-	percentLabel.Font = Enum.Font.GothamBold
-	percentLabel.TextSize = 9
-	percentLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-	percentLabel.TextXAlignment = Enum.TextXAlignment.Center
-	percentLabel.Parent = background
+	local barCorner = Instance.new("UICorner")
+	barCorner.CornerRadius = UDim.new(0, 4)
+	barCorner.Parent = bar
 
 	--====================================================
-	-- UPDATE HP
+	-- HP TEXT
 	--====================================================
 
-	local function updateHealth()
+	local hpText = Instance.new("TextLabel")
+	hpText.Name = "HP"
+	hpText.BackgroundTransparency = 1
+	hpText.Size = UDim2.fromScale(1, 1)
+	hpText.Font = Enum.Font.GothamBold
+	hpText.TextSize = 9
+	hpText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	hpText.TextStrokeTransparency = 0.5
+	hpText.TextXAlignment = Enum.TextXAlignment.Center
+	hpText.TextYAlignment = Enum.TextYAlignment.Center
+	hpText.ZIndex = 5
+	hpText.Parent = barBackground
+
+	--====================================================
+	-- UPDATE
+	--====================================================
+
+	local connections = {}
+
+	local function update()
 
 		if not humanoid.Parent then
+			return
+		end
+
+		if not root.Parent then
 			return
 		end
 
@@ -240,168 +442,222 @@ local function createPlayerHealthGui(character)
 			1
 		)
 
-		hpBar.Size = UDim2.fromScale(
-			percent,
-			1
-		)
+		-- PENTING:
+		-- jangan pakai UDim2.new(percent, -4, ...)
+		-- karena bisa membuat bar error saat HP rendah.
+		bar.Size = UDim2.fromScale(percent, 1)
 
-		hpBar.BackgroundColor3 = getHealthColor(percent)
+		bar.BackgroundColor3 =
+			getHealthColor(percent)
 
-		percentLabel.Text = string.format(
-			"%d%%  |  %d / %d",
+		hpText.Text = string.format(
+			"%d%%  |  %d/%d",
 			math.floor(percent * 100 + 0.5),
 			math.floor(health + 0.5),
 			math.floor(maxHealth + 0.5)
 		)
-
 	end
 
-	updateHealth()
+	update()
+
+	table.insert(
+		connections,
+		humanoid.HealthChanged:Connect(update)
+	)
+
+	table.insert(
+		connections,
+		humanoid:GetPropertyChangedSignal("MaxHealth")
+			:Connect(update)
+	)
 
 	--====================================================
-	-- CONNECTION
+	-- CLEANUP
 	--====================================================
-
-	local connections = {}
-
-	table.insert(
-		connections,
-		humanoid.HealthChanged:Connect(updateHealth)
-	)
-
-	table.insert(
-		connections,
-		humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateHealth)
-	)
-
-	table.insert(
-		connections,
-		humanoid.Died:Connect(function()
-			removeHealthGui(humanoid)
-		end)
-	)
 
 	table.insert(
 		connections,
 		humanoid.AncestryChanged:Connect(function()
-			if not humanoid.Parent then
-				removeHealthGui(humanoid)
+
+			if not humanoid:IsDescendantOf(game) then
+
+				for _, connection in ipairs(connections) do
+					connection:Disconnect()
+				end
+
+				tracked[humanoid] = nil
+
+				if billboard then
+					billboard:Destroy()
+				end
 			end
 		end)
 	)
 
-	table.insert(
-		connections,
-		character.AncestryChanged:Connect(function()
-			if not character.Parent then
-				removeHealthGui(humanoid)
-			end
-		end)
-	)
-
-	trackedHumanoids[humanoid] = {
-		gui = gui,
-		root = root,
+	tracked[humanoid] = {
+		gui = billboard,
 		character = character,
-		connections = connections,
+		root = root,
+		humanoid = humanoid,
 		isPlayer = isPlayer
 	}
-
 end
 
 --========================================================
--- PLAYER LAIN
+-- CREATE PLAYER TARGET
 --========================================================
 
-local function setupPlayer(player)
+local function setupOtherPlayer(player)
 
 	if player == LocalPlayer then
 		return
 	end
 
-	local function onCharacter(character)
+	local function setupCharacter(character)
 
-		task.wait(0.2)
-
-		createPlayerHealthGui(character)
-
-	end
-
-	-- Character sudah ada
-	if player.Character then
 		task.spawn(function()
-			onCharacter(player.Character)
+
+			local humanoid =
+				character:WaitForChild("Humanoid", 10)
+
+			local root =
+				character:WaitForChild(
+					"HumanoidRootPart",
+					10
+				)
+
+			if not humanoid or not root then
+				return
+			end
+
+			-- Pastikan bukan karakter sendiri
+			if player == LocalPlayer then
+				return
+			end
+
+			createHealthGui(
+				character,
+				humanoid,
+				root,
+				true
+			)
 		end)
 	end
 
-	-- Character baru / respawn
-	player.CharacterAdded:Connect(onCharacter)
+	-- Karakter yang sudah ada
+	if player.Character then
+		setupCharacter(player.Character)
+	end
 
+	-- Karakter baru / respawn
+	player.CharacterAdded:Connect(setupCharacter)
 end
 
--- Player yang sudah ada
+--========================================================
+-- IMPORTANT:
+-- DETEKSI PLAYER DILAKUKAN LANGSUNG DARI PLAYERS
+--========================================================
+
 for _, player in ipairs(Players:GetPlayers()) do
-	setupPlayer(player)
+
+	if player ~= LocalPlayer then
+		setupOtherPlayer(player)
+	end
 end
 
--- Player yang baru join
 Players.PlayerAdded:Connect(function(player)
-	setupPlayer(player)
+
+	if player ~= LocalPlayer then
+		setupOtherPlayer(player)
+	end
 end)
 
 --========================================================
--- NPC
+-- NPC DETECTION
 --========================================================
 
-local function checkNPC(instance)
+local function tryCreateNPC(object)
 
-	if not instance:IsA("Model") then
+	if not object:IsA("Humanoid") then
 		return
 	end
 
-	-- Kalau ini karakter player, jangan diproses sebagai NPC
-	if Players:GetPlayerFromCharacter(instance) then
+	local humanoid = object
+	local character = humanoid.Parent
+
+	if not character then
 		return
 	end
 
-	local humanoid = instance:FindFirstChildOfClass("Humanoid")
-
-	if humanoid then
-		createPlayerHealthGui(instance)
+	if not character:IsA("Model") then
+		return
 	end
 
-end
+	-- Kalau Humanoid ini milik player,
+	-- biarkan sistem PlayerAdded yang menangani.
+	local player = Players:GetPlayerFromCharacter(character)
 
--- NPC yang sudah ada
-for _, instance in ipairs(Workspace:GetDescendants()) do
-	checkNPC(instance)
-end
+	if player then
+		return
+	end
 
--- NPC yang baru muncul
-Workspace.DescendantAdded:Connect(function(instance)
+	if character == LocalPlayer.Character then
+		return
+	end
 
-	if instance:IsA("Model") then
+	local root =
+		character:FindFirstChild("HumanoidRootPart")
+		or character:FindFirstChild("Torso")
+		or character:FindFirstChild("UpperTorso")
 
-		task.defer(function()
-			checkNPC(instance)
-		end)
+	if not root then
+		task.delay(0.5, function()
 
-	elseif instance:IsA("Humanoid") then
+			if humanoid.Parent then
 
-		task.defer(function()
+				local newRoot =
+					character:FindFirstChild(
+						"HumanoidRootPart"
+					)
+					or character:FindFirstChild("Torso")
+					or character:FindFirstChild("UpperTorso")
 
-			local character = instance.Parent
-
-			if character
-				and character:IsA("Model")
-				and not Players:GetPlayerFromCharacter(character) then
-
-				createPlayerHealthGui(character)
-
+				if newRoot then
+					createHealthGui(
+						character,
+						humanoid,
+						newRoot,
+						false
+					)
+				end
 			end
-
 		end)
 
+		return
+	end
+
+	createHealthGui(
+		character,
+		humanoid,
+		root,
+		false
+	)
+end
+
+-- Scan NPC yang sudah ada
+for _, object in ipairs(Workspace:GetDescendants()) do
+	if object:IsA("Humanoid") then
+		tryCreateNPC(object)
+	end
+end
+
+-- NPC yang baru spawn
+Workspace.DescendantAdded:Connect(function(object)
+
+	if object:IsA("Humanoid") then
+		task.defer(function()
+			tryCreateNPC(object)
+		end)
 	end
 
 end)
@@ -416,7 +672,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
 
 	distanceTimer += deltaTime
 
-	if distanceTimer < DISTANCE_CHECK_INTERVAL then
+	if distanceTimer < UPDATE_DISTANCE_INTERVAL then
 		return
 	end
 
@@ -428,7 +684,8 @@ RunService.Heartbeat:Connect(function(deltaTime)
 		return
 	end
 
-	local localRoot = getRoot(localCharacter)
+	local localRoot =
+		localCharacter:FindFirstChild("HumanoidRootPart")
 
 	if not localRoot then
 		return
@@ -436,38 +693,123 @@ RunService.Heartbeat:Connect(function(deltaTime)
 
 	local localPosition = localRoot.Position
 
-	for humanoid, data in pairs(trackedHumanoids) do
+	for humanoid, data in pairs(tracked) do
 
-		if not humanoid.Parent then
+		if not humanoid.Parent
+			or not data.root
+			or not data.root.Parent then
 
-			removeHealthGui(humanoid)
+			if data.gui then
+				data.gui:Destroy()
+			end
 
-			continue
-		end
-
-		local rootPart = data.root
-
-		if not rootPart or not rootPart.Parent then
-
-			removeHealthGui(humanoid)
+			tracked[humanoid] = nil
 
 			continue
 		end
 
-		local distance = (
-			rootPart.Position - localPosition
-		).Magnitude
+		local distance =
+			(data.root.Position - localPosition).Magnitude
 
-		if distance <= MAX_HP_BAR_DISTANCE then
+		local shouldShow =
+			distance <= MAX_DISTANCE
 
-			data.gui.Enabled = true
-
-		else
-
-			data.gui.Enabled = false
-
+		if data.gui.Enabled ~= shouldShow then
+			data.gui.Enabled = shouldShow
 		end
+	end
+end)
 
+print(
+	"[HP SYSTEM] Loaded successfully | Player + NPC | Distance:",
+	MAX_DISTANCE
+)
+
+--========================================================
+-- DEVICE INFO
+--========================================================
+
+local function getDeviceName()
+
+	if UserInputService.GamepadEnabled then
+		return "Gamepad"
+
+	elseif UserInputService.TouchEnabled then
+		return "Mobile / Touch"
+
+	else
+		return "PC / Keyboard"
+	end
+end
+
+local function getLocaleName()
+
+	local locale = LocalizationService.RobloxLocaleId
+
+	if typeof(locale) == "string"
+		and locale ~= "" then
+
+		return locale
 	end
 
-end)
+	return "Unknown"
+end
+
+local infoGui = Instance.new("ScreenGui")
+infoGui.Name = "DeviceInfoPanel"
+infoGui.ResetOnSpawn = false
+infoGui.IgnoreGuiInset = true
+infoGui.Parent = PlayerGui
+
+local panel = Instance.new("Frame")
+panel.Name = "InfoFrame"
+panel.Position = UDim2.new(0, 25, 0, 110)
+panel.Size = UDim2.fromOffset(220, 58)
+panel.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+panel.BackgroundTransparency = 0.1
+panel.BorderSizePixel = 0
+panel.Parent = infoGui
+
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 12)
+panelCorner.Parent = panel
+
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = Color3.fromRGB(255, 255, 255)
+panelStroke.Transparency = 0.8
+panelStroke.Parent = panel
+
+local title = Instance.new("TextLabel")
+title.Text = "Device Info"
+title.Size = UDim2.new(1, -18, 0, 18)
+title.Position = UDim2.new(0, 10, 0, 5)
+title.BackgroundTransparency = 1
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.TextColor3 = Color3.fromRGB(200, 200, 200)
+title.Parent = panel
+
+local deviceLabel = Instance.new("TextLabel")
+deviceLabel.Name = "DeviceLabel"
+deviceLabel.Size = UDim2.new(1, -18, 0, 16)
+deviceLabel.Position = UDim2.new(0, 10, 0, 22)
+deviceLabel.BackgroundTransparency = 1
+deviceLabel.TextXAlignment = Enum.TextXAlignment.Left
+deviceLabel.Font = Enum.Font.GothamMedium
+deviceLabel.TextSize = 12
+deviceLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+deviceLabel.Text = "Device: " .. getDeviceName()
+deviceLabel.Parent = panel
+
+local localeLabel = Instance.new("TextLabel")
+localeLabel.Name = "LocaleLabel"
+localeLabel.Size = UDim2.new(1, -18, 0, 16)
+localeLabel.Position = UDim2.new(0, 10, 0, 38)
+localeLabel.BackgroundTransparency = 1
+localeLabel.TextXAlignment = Enum.TextXAlignment.Left
+localeLabel.Font = Enum.Font.GothamMedium
+localeLabel.TextSize = 12
+localeLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+localeLabel.Text = "Locale: " .. getLocaleName()
+localeLabel.Parent = panel
