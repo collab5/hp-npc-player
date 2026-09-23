@@ -16,7 +16,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 -- CONFIG
 --========================================================
 
-local MAX_DISTANCE = 30
+local MAX_DISTANCE = 25
 local DISTANCE_UPDATE = 0.25
 
 local DARK = Color3.fromRGB(12, 12, 15)
@@ -69,7 +69,28 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "DarkPvPGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = 0
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = PlayerGui
+
+-- ============================================================
+-- INPUT SAFETY
+-- This GUI is visual-only. It never binds, blocks, or listens
+-- for Shift/keyboard input, so Shift Lock and other controls
+-- remain available to Roblox/other scripts.
+-- ============================================================
+local function makeVisualOnly(guiObject)
+    if guiObject:IsA("GuiObject") then
+        guiObject.Active = false
+        guiObject.Selectable = false
+    end
+end
+
+for _, obj in ipairs(ScreenGui:GetDescendants()) do
+    makeVisualOnly(obj)
+end
+
+ScreenGui.DescendantAdded:Connect(makeVisualOnly)
 
 --========================================================
 -- SELF HUD
@@ -147,6 +168,8 @@ SelfHPText.TextColor3 = Color3.fromRGB(160, 160, 160)
 --========================================================
 
 local LowHP = Instance.new("Frame")
+LowHP.Active = false
+LowHP.Selectable = false
 LowHP.Name = "LowHPEffect"
 LowHP.Size = UDim2.fromScale(1, 1)
 LowHP.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
@@ -160,6 +183,8 @@ LowHP.Parent = ScreenGui
 --========================================================
 
 local DamageFlash = Instance.new("Frame")
+DamageFlash.Active = false
+DamageFlash.Selectable = false
 DamageFlash.Size = UDim2.fromScale(1, 1)
 DamageFlash.BackgroundColor3 = BRIGHT_RED
 DamageFlash.BackgroundTransparency = 1
@@ -312,26 +337,19 @@ end
 -- SELF CHARACTER
 --========================================================
 
-local selfBillboard
-
 local function setupSelf(character)
-
-	if selfBillboard then
-		selfBillboard:Destroy()
-		selfBillboard = nil
-	end
+    -- SELF HP is HUD-only. Remove any legacy SELF billboard left by an older copy.
+    for _, obj in ipairs(character:GetDescendants()) do
+        if obj:IsA("BillboardGui") and obj.Name == "DarkHP_Billboard" then
+            obj:Destroy()
+        end
+    end
 
 	local humanoid = character:WaitForChild("Humanoid", 5)
 
 	if not humanoid then
 		return
 	end
-
-	selfBillboard = createBillboard(
-		character,
-		humanoid,
-		"SELF"
-	)
 
 	local lastHealth = humanoid.Health
 
